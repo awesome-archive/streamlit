@@ -1,9 +1,21 @@
-**Issue:** Please include a link to the issue you're addressing. If no issue exists, create one first and then link it here.
+<!--
+⚠️ BEFORE CONTRIBUTING PLEASE READ OUR CONTRIBUTING GUIDELINES!
+https://github.com/streamlit/streamlit/wiki/Contributing
+-->
 
-**Description:** Describe the changes you made to the code, so it's easier for the reader to navigate your pull request. Usually this is a bullet list.
+## Describe your changes
+
+## GitHub Issue Link (if applicable)
+
+## Testing Plan
+
+- Explanation of why no additional tests are needed
+- Unit Tests (JS and/or Python)
+- E2E Tests
+- Any manual testing needed?
 
 ---
 
 **Contribution License Agreement**
 
-By submiting this pull request you agree that all contributions to this project are made under the Apache 2.0 license.
+By submitting this pull request you agree that all contributions to this project are made under the Apache 2.0 license.

@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,42 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Config System Unittest."""
-
-# Python 2/3 compatibility
-from __future__ import print_function, division, unicode_literals, absolute_import
-from streamlit.compatibility import setup_2_3_shims
-
-setup_2_3_shims(globals())
-
-import errno
 import random
 import unittest
-from collections import namedtuple
+from typing import Dict, List, Set
+from unittest.mock import patch
 
-import requests
-import pytest
-import requests_mock
-from mock import patch, mock_open, mock, MagicMock
-import plotly.graph_objs as go
+import numpy as np
+from parameterized import parameterized
 
 from streamlit import util
 
 
-FILENAME = "/some/cache/file"
-mock_get_path = MagicMock(return_value=FILENAME)
-
-
 class UtilTest(unittest.TestCase):
     """Test Streamlit utility functions."""
-
-    def setUp(self):
-        self.patch1 = patch("streamlit.util.os.stat")
-        self.os_stat = self.patch1.start()
-        util._external_ip = None
-
-    def tearDown(self):
-        self.patch1.stop()
 
     def test_memoization(self):
         """Test that util.memoize works."""
@@ -57,125 +33,157 @@ class UtilTest(unittest.TestCase):
         self.assertNotEqual(non_memoized_func(), non_memoized_func())
         self.assertEqual(yes_memoized_func(), yes_memoized_func())
 
-    def test_decode_ascii(self):
-        """Test streamlit.util._decode_ascii."""
-        self.assertEqual("test string.", util._decode_ascii(b"test string."))
+    @parameterized.expand(
+        [("Linux", False, True), ("Windows", True, False), ("Darwin", False, True)]
+    )
+    def test_open_browser(self, os_type, webbrowser_expect, popen_expect):
+        """Test web browser opening scenarios."""
+        from streamlit import env_util
 
-    @patch("streamlit.credentials.util.get_streamlit_file_path", mock_get_path)
-    @patch("streamlit.util.open", mock_open(read_data="data"))
-    def test_streamlit_read(self):
-        """Test streamlit.util.streamlit.read."""
-        with util.streamlit_read(FILENAME) as input:
-            data = input.read()
-        self.assertEqual("data", data)
+        env_util.IS_WINDOWS = os_type == "Windows"
+        env_util.IS_DARWIN = os_type == "Darwin"
+        env_util.IS_LINUX_OR_BSD = os_type == "Linux"
 
-    @patch("streamlit.credentials.util.get_streamlit_file_path", mock_get_path)
-    @patch("streamlit.util.open", mock_open(read_data=b"\xaa\xbb"))
-    def test_streamlit_read_binary(self):
-        """Test streamlit.util.streamlit.read."""
-        with util.streamlit_read(FILENAME, binary=True) as input:
-            data = input.read()
-        self.assertEqual(b"\xaa\xbb", data)
+        with patch("streamlit.env_util.is_executable_in_path", return_value=True):
+            with patch("webbrowser.open") as webbrowser_open:
+                with patch("subprocess.Popen") as subprocess_popen:
+                    util.open_browser("http://some-url")
+                    self.assertEqual(webbrowser_expect, webbrowser_open.called)
+                    self.assertEqual(popen_expect, subprocess_popen.called)
 
-    @patch("streamlit.credentials.util.get_streamlit_file_path", mock_get_path)
-    @patch("streamlit.util.open", mock_open(read_data="data"))
-    def test_streamlit_read_zero_bytes(self):
-        """Test streamlit.util.streamlit.read."""
-        self.os_stat.return_value.st_size = 0
-        with pytest.raises(util.Error) as e:
-            with util.streamlit_read(FILENAME) as input:
-                data = input.read()
-        self.assertEqual(str(e.value), 'Read zero byte file: "/some/cache/file"')
+    def test_open_browser_linux_no_xdg(self):
+        """Test opening the browser on Linux with no xdg installed"""
+        from streamlit import env_util
 
-    @patch("streamlit.credentials.util.get_streamlit_file_path", mock_get_path)
-    def test_streamlit_write(self):
-        """Test streamlit.util.streamlit.write."""
-        with patch("streamlit.util.open", mock_open()) as p, util.streamlit_write(
-            FILENAME
-        ) as output:
-            output.write("some data")
-            p().write.assert_called_once_with("some data")
+        env_util.IS_LINUX_OR_BSD = True
 
-    @patch("streamlit.credentials.util.get_streamlit_file_path", mock_get_path)
-    def test_streamlit_write_exception(self):
-        """Test streamlit.util.streamlit.write."""
-        with patch("streamlit.util.open", mock_open()) as p, patch(
-            "streamlit.util.platform.system"
-        ) as system:
-            system.return_value = "Darwin"
-            p.side_effect = OSError(errno.EINVAL, "[Errno 22] Invalid argument")
-            with pytest.raises(util.Error) as e, util.streamlit_write(
-                FILENAME
-            ) as output:
-                output.write("some data")
-            error_msg = (
-                "Unable to write file: /some/cache/file\n"
-                "Python is limited to files below 2GB on OSX. "
-                "See https://bugs.python.org/issue24658"
-            )
-            self.assertEqual(str(e.value), error_msg)
+        with patch("streamlit.env_util.is_executable_in_path", return_value=False):
+            with patch("webbrowser.open") as webbrowser_open:
+                with patch("subprocess.Popen") as subprocess_popen:
+                    util.open_browser("http://some-url")
+                    self.assertEqual(True, webbrowser_open.called)
+                    self.assertEqual(False, subprocess_popen.called)
 
-    def test_list_is_plotly_chart(self):
-        trace0 = go.Scatter(x=[1, 2, 3, 4], y=[10, 15, 13, 17])
-        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
-        data = [trace0, trace1]
+    def test_functools_wraps(self):
+        """Test wrap for functools.wraps"""
 
-        res = util.is_plotly_chart(data)
-        self.assertTrue(res)
+        import streamlit as st
 
-    def test_data_dict_is_plotly_chart(self):
-        trace0 = go.Scatter(x=[1, 2, 3, 4], y=[10, 15, 13, 17])
-        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
-        d = {"data": [trace0, trace1]}
+        @st.cache
+        def f():
+            return True
 
-        res = util.is_plotly_chart(d)
-        self.assertTrue(res)
+        self.assertEqual(True, hasattr(f, "__wrapped__"))
 
-    def test_dirty_data_dict_is_not_plotly_chart(self):
-        trace0 = go.Scatter(x=[1, 2, 3, 4], y=[10, 15, 13, 17])
-        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
-        d = {"data": [trace0, trace1], "foo": "bar"}  # Illegal property!
+    @parameterized.expand(
+        [
+            ({}, {}),
+            (
+                {
+                    "HELLO": 4,
+                    "Hello": "world",
+                    "hElLo": 5.5,
+                    "": "",
+                },
+                {"hello": 4, "hello": "world", "hello": 5.5, "": ""},
+            ),
+        ]
+    )
+    def test_lower_clean_dict_keys(self, input_dict, answer_dict):
+        return_dict = util.lower_clean_dict_keys(input_dict)
+        self.assertEqual(return_dict, answer_dict)
 
-        res = util.is_plotly_chart(d)
-        self.assertFalse(res)
+    @parameterized.expand(
+        [
+            (np.array([1, 2, 3, 4, 5]), 5, 4),
+            # This one will have 0.15000000000000002 because of floating point precision
+            (np.arange(0.0, 0.25, 0.05), 0.15, 3),
+            ([0, 1, 2, 3], 3, 3),
+            ([0.1, 0.2, 0.3], 0.2, 1),
+            ([0.1, 0.2, None], None, 2),
+            ([0.1, 0.2, float("inf")], float("inf"), 2),
+            (["He", "ello w", "orld"], "He", 0),
+            (list(np.arange(0.0, 0.25, 0.05)), 0.15, 3),
+        ]
+    )
+    def test_successful_index_(self, input, find_value, expected_index):
+        actual_index = util.index_(input, find_value)
+        self.assertEqual(actual_index, expected_index)
 
-    def test_layout_dict_is_not_plotly_chart(self):
-        d = {
-            # Missing a component with a graph object!
-            "layout": {"width": 1000}
-        }
+    @parameterized.expand(
+        [
+            (np.array([1, 2, 3, 4, 5]), 6),
+            (np.arange(0.0, 0.25, 0.05), 0.1500002),
+            ([0, 1, 2, 3], 3.00001),
+            ([0.1, 0.2, 0.3], 0.3000004),
+            ([0.1, 0.2, 0.3], None),
+            (["He", "ello w", "orld"], "world"),
+            (list(np.arange(0.0, 0.25, 0.05)), 0.150002),
+        ]
+    )
+    def test_unsuccessful_index_(self, input, find_value):
+        with self.assertRaises(ValueError):
+            util.index_(input, find_value)
 
-        res = util.is_plotly_chart(d)
-        self.assertFalse(res)
+    @parameterized.expand(
+        [
+            ({"x": ["a"]}, ["x"], {}),
+            ({"a": ["a1", "a2"], "b": ["b1", "b2"]}, ["a"], {"b": ["b1", "b2"]}),
+            ({"c": ["c1", "c2"]}, "no_existing_key", {"c": ["c1", "c2"]}),
+            (
+                {
+                    "embed": ["true"],
+                    "embed_options": ["show_padding", "show_colored_line"],
+                },
+                ["embed", "embed_options"],
+                {},
+            ),
+            (
+                {"EMBED": ["TRUE"], "EMBED_OPTIONS": ["DISABLE_SCROLLING"]},
+                ["embed", "embed_options"],
+                {},
+            ),
+        ]
+    )
+    def test_drop_key_query_params(
+        self,
+        query_params: Dict[str, List[str]],
+        keys_to_drop: List[str],
+        result: Dict[str, List[str]],
+    ):
+        self.assertDictEqual(
+            util.exclude_key_query_params(query_params, keys_to_drop), result
+        )
 
-    def test_fig_is_plotly_chart(self):
-        trace1 = go.Scatter(x=[1, 2, 3, 4], y=[16, 5, 11, 9])
+    @parameterized.expand(
+        [
+            ({"x": ["a"]}, "x", {"a"}),
+            ({"a": ["a1"], "b": ["b1", "b2"]}, "a", {"a1"}),
+            ({"c": ["c1", "c2"]}, "no_existing_key", set()),
+            (
+                {
+                    "embed": ["true"],
+                    "embed_options": ["show_padding", "show_colored_line"],
+                },
+                "embed",
+                {"true"},
+            ),
+            (
+                {"EMBED": ["TRUE"], "EMBED_OPTIONS": ["DISABLE_SCROLLING"]},
+                "embed_options",
+                {"disable_scrolling"},
+            ),
+        ]
+    )
+    def test_extract_key_query_params(
+        self, query_params: Dict[str, List[str]], param_key: str, result: Set[str]
+    ):
+        self.assertSetEqual(
+            util.extract_key_query_params(query_params, param_key), result
+        )
 
-        # Plotly 3.7 needs to read the config file at /home/.plotly when
-        # creating an image. So let's mock that part of the Figure creation:
-        with patch("plotly.offline.offline._get_jconfig") as mock:
-            mock.return_value = {}
-            fig = go.Figure(data=[trace1])
-
-        res = util.is_plotly_chart(fig)
-        self.assertTrue(res)
-
-    def test_is_namedtuple(self):
-        Boy = namedtuple("Boy", ("name", "age"))
-        John = Boy("John", "29")
-
-        res = util.is_namedtuple(John)
-        self.assertTrue(res)
-
-    def test_get_external_ip(self):
-        # Test success
-        with requests_mock.mock() as m:
-            m.get(util._AWS_CHECK_IP, text="1.2.3.4")
-            self.assertEqual("1.2.3.4", util.get_external_ip())
-
-        util._external_ip = None
-
-        # Test failure
-        with requests_mock.mock() as m:
-            m.get(util._AWS_CHECK_IP, exc=requests.exceptions.ConnectTimeout)
-            self.assertEqual(None, util.get_external_ip())
+    def test_calc_md5_can_handle_bytes_and_strings(self):
+        self.assertEqual(
+            util.calc_md5("eventually bytes"),
+            util.calc_md5("eventually bytes".encode("utf-8")),
+        )

@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,25 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from random import random
 import os
 import platform
-import streamlit as st
 import time
+from random import random
+
+import streamlit as st
 
 st.title("Test of run-on-save")
 secs_to_wait = 5
 
-st.write(
-    """
+"""
 How to test this:
+"""
 
+st.info(
+    """
+    **First of all, make sure you're running the dev version of Streamlit** or
+    that this file lives outside the Streamlit distribution. Otherwise, changes
+    to this file may be ignored!
+"""
+)
+
+"""
 1. If run-on-save is on, make sure the page changes every few seconds. Then
-   turn run-on-save off in the settigns menu and check (2).
+   turn run-on-save off in the settings menu and check (2).
 2. If run-on-save is off, make sure "Rerun"/"Always rerun" buttons appear in
    the status area. Click "Always rerun" and check (1).
 """
-)
 
 st.write("This should change every ", secs_to_wait, " seconds: ", random())
 
@@ -65,13 +73,13 @@ elif platform_system == "Darwin":
     )
 
 elif platform_system == "Windows":
-    raise Error("Windows not supported")
+    raise NotImplementedError("Windows not supported")
 
 else:
-    raise Error("Unknown platform")
+    raise Exception("Unknown platform")
 
 os.system(cmd)
 
 status.text("Touched %s" % __file__)
 
-# MODIFIED AT: 1553887865.5356503
+# MODIFIED AT: 1586542219.90599

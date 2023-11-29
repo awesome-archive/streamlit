@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -61,7 +60,7 @@ def get_method_args_from_code(args, line):
     ----------
     args : list
         A list where it's size matches the expected number of parsed arguments
-    line : list
+    line : str
         Stringified line of code with method arguments inside parentheses
 
     Returns
@@ -81,7 +80,7 @@ def get_method_args_from_code(args, line):
 
     # Split arguments, https://stackoverflow.com/a/26634150
     if len(args) > 1:
-        inputs = re.split(",\\s*(?![^(){}[\]]*\\))", line_args)
+        inputs = re.split(r",\s*(?![^(){}[\]]*\))", line_args)
         assert len(inputs) == len(args), "Could not split arguments"
     else:
         inputs = [line_args]

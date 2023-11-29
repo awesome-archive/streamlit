@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,39 +25,25 @@ with a non-zero status.
 import os
 import subprocess
 import sys
+from multiprocessing import Lock
+from multiprocessing.pool import ThreadPool
+from typing import Set
 
 import click
-
-IS_PYTHON_2 = sys.version_info[0] == 2
 
 # Where we expect to find the example files.
 E2E_DIR = "e2e/scripts"
 
-EXCLUDED_FILENAMES = set()
+EXCLUDED_FILENAMES: Set[str] = set()
+
+# st_experimental_rerun.py calls st.experimental_rerun which raises a
+# RerunException when called within plain Python.
+EXCLUDED_FILENAMES.add("st_experimental_rerun.py")
 
 # Since there is not DISPLAY set (and since Streamlit is not actually running
 # and fixing Matplotlib in these tests), we set the MPL backend to something
 # that doesn't require a display.
 os.environ["MPLBACKEND"] = "Agg"
-
-# Scripts that rely on matplotlib can't be run in Python2. matplotlib
-# dropped Py2 support, and so we don't install it in our virtualenv.
-try:
-    import matplotlib
-except ImportError:
-    EXCLUDED_FILENAMES |= set(["empty_charts.py", "pyplot.py", "pyplot_kwargs.py"])
-
-# magic.py uses the async keyword, which is Python 3.6+
-if IS_PYTHON_2:
-    EXCLUDED_FILENAMES.add("magic.py")
-
-# DEVNULL support
-try:
-    # Python 3
-    from subprocess import DEVNULL
-except ImportError:
-    # Python 2
-    DEVNULL = open(os.devnull, "wb")
 
 
 def _command_to_string(command):
@@ -78,9 +64,14 @@ def _get_filenames(dir):
 
 def run_commands(section_header, commands):
     """Run a list of commands, displaying them within the given section."""
+
+    pool = ThreadPool(processes=4)
+    lock = Lock()
     failed_commands = []
 
-    for i, command in enumerate(commands):
+    def process_command(arg):
+        i, command = arg
+
         # Display the status.
         vars = {
             "section_header": section_header,
@@ -94,10 +85,14 @@ def run_commands(section_header, commands):
         )
 
         # Run the command.
-        result = subprocess.call(command.split(" "), stdout=DEVNULL, stderr=None)
+        result = subprocess.call(
+            command.split(" "), stdout=subprocess.DEVNULL, stderr=None
+        )
         if result != 0:
-            failed_commands.append(command)
+            with lock:
+                failed_commands.append(command)
 
+    pool.map(process_command, enumerate(commands))
     return failed_commands
 
 

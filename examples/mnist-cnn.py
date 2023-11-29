@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,29 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""An example of monitoring a simple neural net as it trains."""
+"""An example of monitoring a neural net as it trains."""
 
-# Python 2/3 compatibility
-from __future__ import print_function, division, unicode_literals, absolute_import
-from streamlit.compatibility import setup_2_3_shims
+import math
+import time
 
-setup_2_3_shims(globals())
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.layers import Conv2D, Dense, Dropout, Flatten, MaxPooling2D
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.utils import to_categorical
 
 import streamlit as st
 from streamlit import config
-
-from tensorflow.keras.datasets import mnist
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import SGD
-from keras.utils import np_utils
-from tensorflow import keras
-import math
-import numpy as np
-import pandas as pd
-import time
-
-import tensorflow as tf
 
 # dynamically grow the memory used on the GPU
 # this option is fine on non gpus as well.
@@ -66,16 +59,13 @@ class MyCallback(keras.callbacks.Callback):
         self._epoch_summary = st.empty()
 
     def on_batch_end(self, batch, logs=None):
-        rows = pd.DataFrame(
-            [[logs["loss"], logs["accuracy"]]], columns=["loss", "accuracy"]
-        )
         if batch % 10 == 0:
-            self._epoch_chart.add_rows(
-                {"loss": [logs["loss"]], "accuracy": [logs["accuracy"]]}
-            )
+            rows = {"loss": [logs["loss"]], "accuracy": [logs["accuracy"]]}
+            self._epoch_chart.add_rows(rows)
         if batch % 100 == 99:
+            rows = {"loss": [logs["loss"]], "accuracy": [logs["accuracy"]]}
             self._summary_chart.add_rows(rows)
-        percent_complete = logs["batch"] * logs["size"] / self.params["samples"]
+        percent_complete = batch / self.params["steps"]
         self._epoch_progress.progress(math.ceil(percent_complete * 100))
         ts = time.time() - self._ts
         self._epoch_summary.text(
@@ -116,8 +106,8 @@ x_train = x_train.reshape(x_train.shape[0], img_width, img_height, 1)
 x_test = x_test.reshape(x_test.shape[0], img_width, img_height, 1)
 
 # one hot encode outputs
-y_train = np_utils.to_categorical(y_train)
-y_test = np_utils.to_categorical(y_test)
+y_train = to_categorical(y_train)
+y_test = to_categorical(y_test)
 num_classes = y_test.shape[1]
 
 sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)

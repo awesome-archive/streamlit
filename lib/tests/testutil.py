@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,27 +13,47 @@
 # limitations under the License.
 
 """Utility functions to use in our tests."""
-import threading
-import unittest
+
+import json
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from streamlit import config
-from streamlit.DeltaGenerator import DeltaGenerator
-from streamlit.ReportQueue import ReportQueue
-from streamlit.ReportThread import REPORT_CONTEXT_ATTR_NAME
-from streamlit.ReportThread import ReportContext
-from streamlit.widgets import Widgets
-from streamlit.proto.BlockPath_pb2 import BlockPath
+from streamlit.runtime.memory_uploaded_file_manager import MemoryUploadedFileManager
+from streamlit.runtime.scriptrunner import ScriptRunContext
+from streamlit.runtime.state import SafeSessionState, SessionState
+from tests.constants import SNOWFLAKE_CREDENTIAL_FILE
+
+if TYPE_CHECKING:
+    from snowflake.snowpark import Session
+
+# Reexport functions that were moved to main codebase
+from streamlit.testing.v1.util import (
+    build_mock_config_get_option as build_mock_config_get_option,
+)
+from streamlit.testing.v1.util import patch_config_options as patch_config_options
 
 
-def build_mock_config_get_option(overrides_dict):
-    orig_get_option = config.get_option
+def should_skip_pydantic_tests() -> bool:
+    try:
+        import pydantic
 
-    def mock_config_get_option(name):
-        if name in overrides_dict:
-            return overrides_dict[name]
-        return orig_get_option(name)
+        return not pydantic.__version__.startswith("1.")
+    except ImportError:
+        return True
 
-    return mock_config_get_option
+
+def create_mock_script_run_ctx() -> ScriptRunContext:
+    """Create a ScriptRunContext for use in tests."""
+    return ScriptRunContext(
+        session_id="mock_session_id",
+        _enqueue=lambda msg: None,
+        query_string="mock_query_string",
+        session_state=SafeSessionState(SessionState(), lambda: None),
+        uploaded_file_mgr=MemoryUploadedFileManager("/mock/upload"),
+        page_script_hash="mock_page_script_hash",
+        user_info={"email": "mock@test.com"},
+    )
 
 
 def build_mock_config_is_manually_set(overrides_dict):
@@ -48,55 +67,47 @@ def build_mock_config_is_manually_set(overrides_dict):
     return mock_config_is_manually_set
 
 
-class DeltaGeneratorTestCase(unittest.TestCase):
-    def setUp(self, override_root=True):
-        self.report_queue = ReportQueue()
+def normalize_md(txt: str) -> str:
+    """Replace newlines *inside paragraphs* with spaces.
 
-        if override_root:
-            main_dg = self.new_delta_generator()
-            sidebar_dg = self.new_delta_generator(container=BlockPath.SIDEBAR)
-            setattr(
-                threading.current_thread(),
-                REPORT_CONTEXT_ATTR_NAME,
-                ReportContext(
-                    main_dg=main_dg, sidebar_dg=sidebar_dg, widgets=Widgets()
-                ),
-            )
+    Consecutive lines of text are considered part of the same paragraph
+    in Markdown. So this function joins those into a single line to make the
+    test robust to changes in text wrapping.
 
-    def tearDown(self):
-        self.report_queue._clear()
-        if hasattr(threading.current_thread(), REPORT_CONTEXT_ATTR_NAME):
-            delattr(threading.current_thread(), REPORT_CONTEXT_ATTR_NAME)
+    NOTE: This function doesn't attempt to be 100% grammatically correct
+    Markdown! It's just supposed to be "correct enough" for tests to pass. For
+    example, when we guard "\n\n" from being converted, we really should be
+    guarding for RegEx("\n\n+") instead. But that doesn't matter for our tests.
+    """
+    # Two newlines in a row should NOT be replaced with a space.
+    txt = txt.replace("\n\n", "OMG_NEWLINE")
 
-    def new_delta_generator(self, *args, **kwargs):
-        def enqueue_fn(msg):
-            self.report_queue.enqueue(msg)
-            return True
+    # Lists should NOT be replaced with a space.
+    txt = txt.replace("\n*", "OMG_STAR")
+    txt = txt.replace("\n-", "OMG_HYPHEN")
 
-        if len(args) > 0:
-            enqueue = args[0]
-            args = args[1:]
-        elif "enqueue" in kwargs:
-            enqueue = kwargs.pop("enqueue")
-        else:
-            enqueue = enqueue_fn
+    # Links broken over two lines should not get an extra space.
+    txt = txt.replace("]\n(", "OMG_LINK")
 
-        return DeltaGenerator(enqueue, *args, **kwargs)
+    # Convert all remaining newlines into spaces.
+    txt = txt.replace("\n", " ")
 
-    def get_message_from_queue(self, index=-1):
-        """Get a ForwardMsg proto from the queue, by index.
+    # Restore everything else.
+    txt = txt.replace("OMG_NEWLINE", "\n\n")
+    txt = txt.replace("OMG_STAR", "\n*")
+    txt = txt.replace("OMG_HYPHEN", "\n-")
+    txt = txt.replace("OMG_LINK", "](")
 
-        Returns
-        -------
-        ForwardMsg
-        """
-        return self.report_queue._queue[index]
+    return txt.strip()
 
-    def get_delta_from_queue(self, index=-1):
-        """Get a Delta proto from the queue, by index.
 
-        Returns
-        -------
-        Delta
-        """
-        return self.report_queue._queue[index].delta
+@contextmanager
+def create_snowpark_session() -> "Session":
+    from snowflake.snowpark import Session
+
+    credential = json.loads(SNOWFLAKE_CREDENTIAL_FILE.read_text())
+    session = Session.builder.configs(credential).create()
+    try:
+        yield session
+    finally:
+        session.close()

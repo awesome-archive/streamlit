@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,12 +15,13 @@
 """Streamlit version utilities."""
 import random
 
-import pkg_resources
-import requests
+import packaging.version
+from importlib_metadata import version as _version
+from typing_extensions import Final
 
-from streamlit.logger import get_logger
+import streamlit.logger as logger
 
-LOGGER = get_logger(__name__)
+_LOGGER = logger.get_logger(__name__)
 
 PYPI_STREAMLIT_URL = "https://pypi.org/pypi/streamlit/json"
 
@@ -30,8 +30,14 @@ PYPI_STREAMLIT_URL = "https://pypi.org/pypi/streamlit/json"
 # should_show_new_version_notice() is called.
 CHECK_PYPI_PROBABILITY = 0.10
 
+STREAMLIT_VERSION_STRING: Final[str] = _version("streamlit")
 
-def get_installed_streamlit_version():
+
+def _version_str_to_obj(version_str) -> packaging.version.Version:
+    return packaging.version.Version(version_str)
+
+
+def _get_installed_streamlit_version() -> packaging.version.Version:
     """Return the streamlit version string from setup.py.
 
     Returns
@@ -40,10 +46,10 @@ def get_installed_streamlit_version():
         The version string specified in setup.py.
 
     """
-    return pkg_resources.get_distribution("streamlit").version
+    return _version_str_to_obj(STREAMLIT_VERSION_STRING)
 
 
-def get_latest_streamlit_version(timeout=None):
+def _get_latest_streamlit_version(timeout=None):
     """Request the latest streamlit version string from PyPI.
 
     NB: this involves a network call, so it could raise an error
@@ -61,11 +67,14 @@ def get_latest_streamlit_version(timeout=None):
         on PyPI.
 
     """
+    import requests
+
     rsp = requests.get(PYPI_STREAMLIT_URL, timeout=timeout)
     try:
-        return rsp.json()["info"]["version"]
+        version_str = rsp.json()["info"]["version"]
     except Exception as e:
         raise RuntimeError("Got unexpected response from PyPI", e)
+    return _version_str_to_obj(version_str)
 
 
 def should_show_new_version_notice():
@@ -86,15 +95,15 @@ def should_show_new_version_notice():
     """
     if random.random() >= CHECK_PYPI_PROBABILITY:
         # We don't check PyPI every time this function is called.
-        LOGGER.debug("Skipping PyPI version check")
+        _LOGGER.debug("Skipping PyPI version check")
         return False
 
     try:
-        installed_version = get_installed_streamlit_version()
-        latest_version = get_latest_streamlit_version(timeout=1)
-    except BaseException as e:
+        installed_version = _get_installed_streamlit_version()
+        latest_version = _get_latest_streamlit_version(timeout=1)
+    except Exception as ex:
         # Log this as a debug. We don't care if the user sees it.
-        LOGGER.debug("Failed PyPI version check.\n%s", e)
+        _LOGGER.debug("Failed PyPI version check.", exc_info=ex)
         return False
 
-    return latest_version != installed_version
+    return latest_version > installed_version

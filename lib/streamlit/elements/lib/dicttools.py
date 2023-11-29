@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-# Copyright 2018-2019 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,11 +14,7 @@
 
 """Tools for working with dicts."""
 
-# Python 2/3 compatibility
-from __future__ import print_function, division, unicode_literals, absolute_import
-from streamlit.compatibility import setup_2_3_shims
-
-setup_2_3_shims(globals())
+from typing import Any, Dict, Mapping, Optional
 
 
 def _unflatten_single_dict(flat_dict):
@@ -59,11 +54,11 @@ def _unflatten_single_dict(flat_dict):
         A tree made of dicts inside of dicts.
 
     """
-    out = dict()
+    out: Dict[str, Any] = dict()
     for pathstr, v in flat_dict.items():
         path = pathstr.split("_")
 
-        prev_dict = None
+        prev_dict: Optional[Dict[str, Any]] = None
         curr_dict = out
 
         for k in path:
@@ -72,7 +67,8 @@ def _unflatten_single_dict(flat_dict):
             prev_dict = curr_dict
             curr_dict = curr_dict[k]
 
-        prev_dict[k] = v
+        if prev_dict is not None:
+            prev_dict[k] = v
 
     return out
 
@@ -80,7 +76,8 @@ def _unflatten_single_dict(flat_dict):
 def unflatten(flat_dict, encodings=None):
     """Converts a flat dict of key-value pairs to a spec tree.
 
-    Example:
+    Example
+    -------
         unflatten({
           foo_bar_baz: 123,
           foo_bar_biz: 456,
@@ -102,8 +99,8 @@ def unflatten(flat_dict, encodings=None):
         #   }
         # }
 
-    Args:
-    -----
+    Args
+    ----
     flat_dict: dict
         A flat dict where keys are fully-qualified paths separated by
         underscores.
@@ -111,8 +108,8 @@ def unflatten(flat_dict, encodings=None):
     encodings: set
         Key names that should be automatically moved into the 'encoding' key.
 
-    Returns:
-    --------
+    Returns
+    -------
     A tree made of dicts inside of dicts.
     """
     if encodings is None:
@@ -122,11 +119,11 @@ def unflatten(flat_dict, encodings=None):
 
     for k, v in list(out_dict.items()):
         # Unflatten child dicts:
-        if type(v) in (dict, native_dict):
+        if isinstance(v, dict):
             v = unflatten(v, encodings)
         elif hasattr(v, "__iter__"):
             for i, child in enumerate(v):
-                if type(child) in (dict, native_dict):
+                if isinstance(child, dict):
                     v[i] = unflatten(child, encodings)
 
         # Move items into 'encoding' if needed:
@@ -137,3 +134,14 @@ def unflatten(flat_dict, encodings=None):
             out_dict.pop(k)
 
     return out_dict
+
+
+def remove_none_values(input_dict: Mapping[Any, Any]) -> Dict[Any, Any]:
+    """Remove all keys with None values from a dict."""
+    new_dict = {}
+    for key, val in input_dict.items():
+        if isinstance(val, dict):
+            val = remove_none_values(val)
+        if val is not None:
+            new_dict[key] = val
+    return new_dict
